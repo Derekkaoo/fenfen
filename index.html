@@ -1,0 +1,620 @@
+<!doctype html>
+<html lang="zh-Hant-TW">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>分分帳</title>
+<meta name="theme-color" content="#17705a" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#111816" media="(prefers-color-scheme: dark)">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="分分帳">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Huninn&family=Noto+Sans+TC:wght@400;500;700&family=IBM+Plex+Mono:wght@500&display=swap">
+<style>
+
+/* Layout: one column ledger. Header with group switcher, summary strip, tabs (帳目 / 結算 / 成員與匯率), modal sheet for new expense. */
+:root{
+  --bg:#f3f6f4; --surface:#ffffff; --line:#d9e2dd; --fg:#1b2a24; --muted:#5f7068;
+  --accent:#17705a; --accent-ink:#ffffff; --accent-soft:#e1f0ea;
+  --owe:#b5462f; --owe-soft:#f8e6e1; --get:#17705a; --get-soft:#e1f0ea;
+  --shadow:0 1px 2px rgba(20,40,30,.06),0 8px 24px rgba(20,40,30,.06);
+  --f-display:"Huninn","Noto Sans TC","PingFang TC","Microsoft JhengHei",sans-serif;
+  --f-body:"Noto Sans TC","PingFang TC","Microsoft JhengHei",system-ui,sans-serif;
+  --f-num:"IBM Plex Mono",ui-monospace,"SFMono-Regular",Menlo,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#111816; --surface:#18221f; --line:#2b3934; --fg:#e4ece8; --muted:#97a8a0;
+  --accent:#4fbf9c; --accent-ink:#0d1714; --accent-soft:#1d3a31;
+  --owe:#ef8a72; --owe-soft:#3a2420; --get:#4fbf9c; --get-soft:#1d3a31;
+  --shadow:0 1px 2px rgba(0,0,0,.3); color-scheme:dark;}}
+:root[data-theme="dark"]{
+  --bg:#111816; --surface:#18221f; --line:#2b3934; --fg:#e4ece8; --muted:#97a8a0;
+  --accent:#4fbf9c; --accent-ink:#0d1714; --accent-soft:#1d3a31;
+  --owe:#ef8a72; --owe-soft:#3a2420; --get:#4fbf9c; --get-soft:#1d3a31;
+  --shadow:0 1px 2px rgba(0,0,0,.3); color-scheme:dark;}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--fg);font-family:var(--f-body);font-size:15px;line-height:1.55}
+.wrap{max-width:760px;margin:0 auto;padding-inline:16px;padding-block:20px 110px;display:flex;flex-direction:column;gap:18px}
+header{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.brand{font-family:var(--f-display);font-size:28px;letter-spacing:.02em;display:flex;align-items:baseline;gap:8px}
+.brand small{font-family:var(--f-body);font-size:13px;color:var(--muted)}
+.num{font-family:var(--f-num);font-variant-numeric:tabular-nums}
+button,input,select{font:inherit;color:inherit}
+button{cursor:pointer;border-radius:10px;border:1px solid var(--line);background:var(--surface);padding:8px 14px}
+button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.btn-primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent);font-weight:500}
+.btn-ghost{background:transparent;border-color:transparent;color:var(--muted)}
+.btn-ghost:hover{color:var(--fg)}
+.btn-sm{padding:4px 10px;font-size:13px}
+input,select{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:8px 10px;min-width:0;width:100%}
+label.f{display:flex;flex-direction:column;gap:4px;font-size:13px;color:var(--muted)}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end}
+.row>*{flex:1 1 140px;min-width:0}
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:16px}
+.switcher{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.switcher select{width:auto;max-width:60vw}
+.summary{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:1px;background:var(--line);border:1px solid var(--line);border-radius:14px;overflow:hidden}
+.summary>div{background:var(--surface);padding:12px 16px;display:flex;flex-direction:column;gap:2px}
+.summary .k{font-size:12px;color:var(--muted);letter-spacing:.06em}
+.summary .v{font-size:20px}
+.gtitle{font-family:var(--f-display);font-size:22px;margin:0;text-wrap:balance}
+.tabs{display:flex;gap:4px;border-bottom:1px solid var(--line)}
+.tabs button{border:none;border-bottom:2px solid transparent;border-radius:0;background:none;color:var(--muted);padding:8px 12px}
+.tabs button[aria-selected="true"]{color:var(--fg);border-bottom-color:var(--accent);font-weight:500}
+.list{display:flex;flex-direction:column}
+.exp{display:grid;grid-template-columns:52px 1fr auto;gap:12px;align-items:center;padding:12px 4px;border-bottom:1px solid var(--line)}
+.exp:last-child{border-bottom:none}
+.date{font-size:12px;color:var(--muted);text-align:center;line-height:1.2}
+.date b{display:block;font-family:var(--f-num);font-size:18px;color:var(--fg);font-weight:500}
+.exp .t{font-weight:500;min-width:0;overflow-wrap:anywhere}
+.exp .s{font-size:13px;color:var(--muted)}
+.exp .amt{text-align:right}
+.exp .amt small{display:block;font-size:12px;color:var(--muted)}
+.exp.transfer .t{color:var(--muted);font-weight:400}
+.tag{display:inline-block;font-size:11px;padding:1px 7px;border-radius:99px;background:var(--accent-soft);color:var(--accent);margin-left:6px;vertical-align:1px}
+.bal{display:grid;grid-template-columns:minmax(70px,auto) 1fr minmax(90px,auto);gap:10px;align-items:center;padding:8px 0}
+.bar{height:10px;position:relative;background:var(--bg);border-radius:6px}
+.bar span{position:absolute;top:0;bottom:0;border-radius:6px}
+.bar::after{content:"";position:absolute;left:50%;top:-3px;bottom:-3px;width:1px;background:var(--line)}
+.pos{color:var(--get)} .neg{color:var(--owe)}
+.xfer{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:10px 12px;border-radius:12px;background:var(--bg)}
+.xfer .arrow{color:var(--muted)}
+.xfer .who{font-weight:500}
+.xfer .grow{flex:1}
+.stack{display:flex;flex-direction:column;gap:10px}
+h3{font-size:14px;margin:4px 0;color:var(--muted);font-weight:500;letter-spacing:.06em}
+.chips{display:flex;flex-wrap:wrap;gap:8px}
+.chip{display:inline-flex;align-items:center;gap:6px;padding:5px 6px 5px 12px;border-radius:99px;border:1px solid var(--line);background:var(--surface)}
+.chip button{padding:0 6px;border:none;background:none;color:var(--muted);font-size:16px;line-height:1}
+.empty{text-align:center;color:var(--muted);padding:28px 12px}
+.note{font-size:13px;color:var(--muted)}
+.err{color:var(--owe);font-size:13px;min-height:1.2em}
+.fab{position:fixed;right:16px;bottom:calc(16px + env(safe-area-inset-bottom,0px));box-shadow:var(--shadow);padding:12px 20px;border-radius:99px}
+.overlay{position:fixed;inset:0;background:rgba(10,20,16,.45);display:flex;align-items:flex-end;justify-content:center;z-index:10;padding:16px}
+@media (min-width:640px){.overlay{align-items:center}}
+.sheet{background:var(--surface);border-radius:16px;width:100%;max-width:520px;max-height:90vh;overflow:auto;padding:20px;display:flex;flex-direction:column;gap:14px}
+.sheet h2{font-family:var(--f-display);font-weight:400;margin:0;font-size:22px}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:10px;overflow:hidden}
+.seg button{border:none;border-radius:0;background:none;padding:6px 14px}
+.seg button[aria-pressed="true"]{background:var(--accent-soft);color:var(--accent);font-weight:500}
+.part{display:grid;grid-template-columns:auto 1fr 110px;gap:10px;align-items:center}
+.part input[type=checkbox]{width:18px;height:18px}
+.pick{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:8px}
+.pk{display:grid;grid-template-columns:auto 1fr;grid-template-rows:auto auto;column-gap:10px;align-items:center;text-align:left;padding:12px;border-radius:12px;min-height:64px}
+.pk .ck{grid-row:span 2;width:24px;height:24px;border-radius:50%;border:2px solid var(--line);display:grid;place-items:center;font-size:14px;font-weight:700}
+.pk .nm{font-weight:500;min-width:0;overflow-wrap:anywhere}
+.pk .sh{font-size:13px;color:var(--muted)}
+.pk[aria-pressed="true"]{background:var(--accent-soft);border-color:var(--accent)}
+.pk[aria-pressed="true"] .ck{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.pk[aria-pressed="true"] .sh{color:var(--accent)}
+@media (max-width:640px){input,select{font-size:16px}}
+.rates{display:grid;grid-template-columns:auto 1fr auto;gap:8px 10px;align-items:center}
+.banner{padding:12px 14px;border-radius:12px;background:var(--owe-soft);color:var(--owe);font-size:14px}
+@media (prefers-reduced-motion:no-preference){.sheet{animation:up .18s ease-out}@keyframes up{from{transform:translateY(12px);opacity:.6}}}
+
+[hidden]{display:none!important}
+img{max-width:100%}
+
+html{-webkit-text-size-adjust:100%}
+body{margin:0;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);-webkit-tap-highlight-color:transparent}
+.status{font-size:12px;padding:3px 10px;border-radius:99px;background:var(--accent-soft);color:var(--accent);white-space:nowrap;border:none}
+.status.off{background:var(--owe-soft);color:var(--owe)}
+.code{font-family:var(--f-num);font-size:12px;word-break:break-all;background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:10px;max-height:96px;overflow:auto;user-select:all}
+textarea{font:inherit;color:inherit;background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:8px 10px;width:100%;min-height:72px;resize:vertical}
+@media (max-width:640px){textarea{font-size:16px}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="brand">分分帳 <small>Derek 與 Jade 的帳本</small></div>
+    <div class="switcher"><span id="switcher" class="switcher"></span><button id="status" class="status" hidden></button></div>
+  </header>
+  <div id="banner"></div>
+  <main id="main" class="stack"><div class="empty">正在載入帳本…</div></main>
+</div>
+<div id="modal"></div>
+
+<script>
+const CURS = ["TWD","JPY","USD","EUR","KRW","HKD","CNY","THB","GBP","SGD","AUD","VND","MYR"];
+const NODEC = new Set(["TWD","JPY","KRW","VND"]);
+const POLL_MS = 15000;
+
+/* ---------- local storage ---------- */
+const LS = {
+  get(k, d){ try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch(e){ return d; } },
+  set(k, v){ try { localStorage.setItem(k, JSON.stringify(v)); } catch(e){} },
+  del(k){ try { localStorage.removeItem(k); } catch(e){} },
+};
+let cfg = LS.get("fenfen.cfg", null);           // {api, pin}
+let server = LS.get("fenfen.cache", {groups:[], expenses:[]});
+let queue = LS.get("fenfen.queue", []);         // pending ops, oldest first
+
+const S = { gid: LS.get("fenfen.gid", null), group:null, groups:[], expenses:[], tab:"list",
+  online:true, syncing:false, pinBad:false, dirty:false };
+
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const rid = p => p + Date.now().toString(36) + Math.random().toString(36).slice(2,7);
+const today = () => { const d = new Date(); return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"); };
+const r2 = n => Math.round(n*100)/100;
+function fmt(n, cur){ const d = NODEC.has(cur)?0:2; return Number(n).toLocaleString("zh-TW",{minimumFractionDigits:d,maximumFractionDigits:d}); }
+const mname = id => (S.group?.members||[]).find(m=>m.id===id)?.name || "（已移除）";
+
+/* ---------- setup code (shared with the other phone) ---------- */
+const encodeCfg = c => btoa(unescape(encodeURIComponent(JSON.stringify(c))));
+function decodeCfg(s){
+  try { const c = JSON.parse(decodeURIComponent(escape(atob(String(s).trim()))));
+    if (c && /^https:\/\/script\.google\.com\//.test(c.api) && c.pin) return {api:c.api, pin:String(c.pin)}; } catch(e){}
+  return null;
+}
+(function readHash(){
+  const m = location.hash.match(/^#setup=(.+)$/);
+  if (!m) return;
+  const c = decodeCfg(decodeURIComponent(m[1]));
+  if (c){ cfg = c; LS.set("fenfen.cfg", c); }
+  history.replaceState(null, "", location.pathname + location.search);
+})();
+
+/* ---------- sync ---------- */
+function applyOps(base, ops){
+  const g = new Map(base.groups.map(x=>[x.id,x])), e = new Map(base.expenses.map(x=>[x.id,x]));
+  for (const o of ops){
+    if (o.t==="group") g.set(o.doc.id, o.doc);
+    else if (o.t==="exp") e.set(o.doc.id, o.doc);
+    else if (o.t==="delExp") e.delete(o.id);
+  }
+  return {groups:[...g.values()], expenses:[...e.values()]};
+}
+function op(o){
+  queue.push(o); LS.set("fenfen.queue", queue);
+  refresh(true); flush();
+}
+async function api(method, body){
+  const url = method==="GET" ? cfg.api + "?action=all&pin=" + encodeURIComponent(cfg.pin) : cfg.api;
+  const r = await fetch(url, method==="GET" ? {cache:"no-store"} :
+    {method:"POST", headers:{"Content-Type":"text/plain;charset=utf-8"}, body:JSON.stringify({pin:cfg.pin, ...body})});
+  const j = await r.json();
+  if (!j.ok){ const err = new Error(j.error); err.server = true; throw err; }
+  return j.data;
+}
+function syncFail(e){
+  S.online = false;
+  if (e && e.server && (e.message==="pin" || e.message==="setup")) S.pinBad = e.message;
+}
+async function flush(){
+  if (!cfg || !queue.length || S.flushing) return;
+  S.flushing = true; renderStatus();
+  const batch = queue.slice(0, 50);
+  try {
+    await api("POST", {ops:batch});
+    server = applyOps(server, batch); LS.set("fenfen.cache", server);
+    queue = queue.slice(batch.length); LS.set("fenfen.queue", queue);
+    S.online = true; S.pinBad = false;
+  } catch(e){ syncFail(e); }
+  S.flushing = false; renderStatus();
+  if (S.online && queue.length) flush();
+}
+async function pull(){
+  if (!cfg || S.pulling) return;
+  S.pulling = true; renderStatus();
+  try {
+    const data = await api("GET");
+    const next = {groups:data.groups||[], expenses:data.expenses||[]};
+    if (JSON.stringify(next) !== JSON.stringify(server)){ server = next; LS.set("fenfen.cache", server); refresh(); }
+    S.online = true; S.pinBad = false; S.firstLoad = true;
+  } catch(e){ syncFail(e); }
+  S.pulling = false; renderStatus();
+  if (S.online && queue.length) flush();
+}
+function sync(){ if (document.visibilityState === "visible"){ flush(); pull(); } }
+setInterval(sync, POLL_MS);
+document.addEventListener("visibilitychange", sync);
+addEventListener("online", sync);
+
+function refresh(force){
+  const v = applyOps(server, queue);
+  S.groups = v.groups.sort((a,b)=>(b.createdAt||0)-(a.createdAt||0));
+  if (!S.groups.find(g=>g.id===S.gid)) S.gid = S.groups[0]?.id || null;
+  S.group = S.groups.find(g=>g.id===S.gid) || null;
+  S.expenses = v.expenses.filter(e=>e.groupId===S.gid)
+    .sort((a,b)=> (b.date||"").localeCompare(a.date||"") || (b.createdAt||0)-(a.createdAt||0));
+  renderSwitcher();
+  // don't wipe a field the person is typing in; render once they leave it
+  const a = document.activeElement;
+  if (!force && a && $("#main").contains(a) && /INPUT|SELECT|TEXTAREA/.test(a.tagName)){ S.dirty = true; return; }
+  render();
+}
+$("#main").addEventListener("focusout", () => setTimeout(() => { if (S.dirty){ S.dirty = false; render(); } }, 0));
+
+function renderStatus(){
+  const b = $("#status");
+  if (!cfg){ b.hidden = true; return; }
+  b.hidden = false;
+  let t, off = false;
+  if (S.pinBad === "setup"){ t = "試算表的密碼還沒設定"; off = true; }
+  else if (S.pinBad){ t = "密碼錯誤"; off = true; }
+  else if (!S.online){ t = queue.length ? `離線 · ${queue.length} 筆待上傳` : "離線"; off = true; }
+  else if (queue.length || S.flushing){ t = "上傳中…"; }
+  else if (S.pulling && !S.firstLoad){ t = "同步中…"; }
+  else t = "已同步";
+  b.textContent = t; b.classList.toggle("off", off);
+  b.onclick = () => sync();
+}
+
+/* ---------- core math ---------- */
+const rateOf = e => e.currency === S.group.base ? 1 : Number(e.rate)||0;
+const baseAmt = e => e.amount * rateOf(e);
+function shares(e){
+  const rate = rateOf(e), out = {};
+  if (e.kind === "transfer") return out;
+  if (e.mode === "exact") for (const [id,v] of Object.entries(e.exact||{})) out[id] = (Number(v)||0)*rate;
+  else { const ps = e.participants||[]; const each = ps.length ? e.amount*rate/ps.length : 0; ps.forEach(id => out[id] = each); }
+  return out;
+}
+function balances(){
+  const b = {}; (S.group.members||[]).forEach(m => b[m.id]=0);
+  for (const e of S.expenses){
+    const amt = baseAmt(e);
+    if (e.kind === "transfer"){ b[e.payer]=(b[e.payer]||0)+amt; b[e.to]=(b[e.to]||0)-amt; continue; }
+    b[e.payer]=(b[e.payer]||0)+amt;
+    for (const [id,v] of Object.entries(shares(e))) b[id]=(b[id]||0)-v;
+  }
+  return b;
+}
+function simplify(b){
+  const eps = NODEC.has(S.group.base) ? 0.5 : 0.005;
+  const cr = [], db = [];
+  for (const [id,v] of Object.entries(b)){ if (v>eps) cr.push({id,v}); else if (v<-eps) db.push({id,v:-v}); }
+  cr.sort((a,c)=>c.v-a.v); db.sort((a,c)=>c.v-a.v);
+  const out = []; let i=0, j=0;
+  while (i<db.length && j<cr.length){
+    const x = Math.min(db[i].v, cr[j].v);
+    out.push({from:db[i].id, to:cr[j].id, amt:r2(x)});
+    db[i].v-=x; cr[j].v-=x;
+    if (db[i].v<=eps) i++;
+    if (cr[j].v<=eps) j++;
+  }
+  return out;
+}
+
+/* ---------- writes ---------- */
+const saveGroup = g => { const {id, ...rest} = g; op({t:"group", doc:{id, ...rest, updatedAt:Date.now()}}); };
+const saveExp = e => op({t:"exp", doc:{...e, groupId:S.gid, updatedAt:Date.now()}});
+const delExp = id => op({t:"delExp", id});
+function selectGroup(id){ S.gid = id; LS.set("fenfen.gid", id); refresh(true); }
+
+/* ---------- setup screen ---------- */
+function renderSetup0(){
+  fab(false);
+  $("#switcher").innerHTML = "";
+  $("#main").innerHTML = `<div class="panel stack">
+    <h1 class="gtitle">連接你們的帳本</h1>
+    <p class="note" style="margin:0">第一次使用要連到存資料的 Google 試算表。如果對方已經設定好，請他把「設定碼」傳給你，貼在下面就好。</p>
+    <form id="sc" class="stack">
+      <label class="f">設定碼<textarea id="sc-code" placeholder="貼上對方傳來的設定碼"></textarea></label>
+      <div class="row"><button class="btn-primary" style="flex:0 0 auto">連接</button></div>
+    </form>
+    <details><summary class="note" style="cursor:pointer">我是第一個設定的人（手動輸入）</summary>
+      <form id="sm" class="stack" style="margin-top:12px">
+        <label class="f">網頁應用程式網址<input id="sm-api" inputmode="url" placeholder="https://script.google.com/macros/s/…/exec"></label>
+        <label class="f">密碼<input id="sm-pin" placeholder="你在 Code.gs 裡設定的 PIN"></label>
+        <div class="row"><button class="btn-primary" style="flex:0 0 auto">連接</button></div>
+      </form></details>
+    <div class="err" id="sc-err"></div></div>`;
+  const tryCfg = async c => {
+    const err = $("#sc-err");
+    if (!c){ err.textContent = "設定碼看起來不完整，請整段重新複製貼上。"; return; }
+    err.textContent = "連線中…";
+    const prev = cfg; cfg = c;
+    try { const data = await api("GET");
+      LS.set("fenfen.cfg", c); server = {groups:data.groups||[], expenses:data.expenses||[]}; LS.set("fenfen.cache", server);
+      S.online = true; S.pinBad = false; S.firstLoad = true; refresh(true); renderStatus();
+    } catch(e){ cfg = prev;
+      err.textContent = e.server && e.message==="pin" ? "密碼不對，請確認和 Code.gs 裡的 PIN 一樣。"
+        : e.server && e.message==="setup" ? "Code.gs 裡的 PIN 還沒改，請先改好再重新部署。"
+        : "連不上試算表。請確認網址是以 /exec 結尾，部署時「誰可以存取」選了「任何人」，而且手機有網路。"; }
+  };
+  $("#sc").onsubmit = e => { e.preventDefault(); tryCfg(decodeCfg($("#sc-code").value)); };
+  $("#sm").onsubmit = e => { e.preventDefault();
+    const a = $("#sm-api").value.trim(), p = $("#sm-pin").value.trim();
+    tryCfg(/^https:\/\/script\.google\.com\/.+\/exec$/.test(a) && p ? {api:a, pin:p} : null); };
+}
+
+/* ---------- render ---------- */
+function renderSwitcher(){
+  const el = $("#switcher");
+  if (!cfg || !S.groups.length){ el.innerHTML = ""; return; }
+  el.innerHTML = `<select id="gsel" aria-label="切換群組">${S.groups.map(g=>`<option value="${esc(g.id)}"${g.id===S.gid?" selected":""}>${esc(g.name)}</option>`).join("")}</select>
+    <button class="btn-sm" id="newg">＋ 新群組</button>`;
+  $("#gsel").onchange = e => selectGroup(e.target.value);
+  $("#newg").onclick = openNewGroup;
+}
+
+function render(){
+  if (!cfg){ renderSetup0(); return; }
+  const m = $("#main");
+  if (!S.gid){
+    m.innerHTML = `<div class="panel stack">
+      <h1 class="gtitle">還沒有任何群組</h1>
+      <p class="note" style="margin:0">為每次旅行或固定開銷開一個群組，例如「日常生活」「2026 東京」，就可以開始記帳。</p>
+      ${newGroupForm()}</div>`;
+    bindNewGroup(); fab(false); return;
+  }
+  const g = S.group, base = g.base;
+  const spend = S.expenses.filter(e=>e.kind!=="transfer").reduce((s,e)=>s+baseAmt(e),0);
+  const open = simplify(balances());
+  m.innerHTML = `
+    <h1 class="gtitle">${esc(g.name)}</h1>
+    <div class="summary">
+      <div><span class="k">總支出</span><span class="v num">${fmt(spend,base)} <small>${esc(base)}</small></span></div>
+      <div><span class="k">待轉帳</span><span class="v">${open.length ? `<span class="num">${fmt(open[0].amt,base)}</span> <small>${esc(mname(open[0].from))} → ${esc(mname(open[0].to))}</small>${open.length>1?` <small>等 ${open.length} 筆</small>`:""}` : "已結清"}</span></div>
+    </div>
+    <div class="tabs" role="tablist">
+      ${[["list","帳目"],["settle","結算"],["setup","設定"]].map(([k,l])=>`<button role="tab" data-tab="${k}" aria-selected="${S.tab===k}">${l}</button>`).join("")}
+    </div>
+    <section id="tabbody"></section>`;
+  m.querySelectorAll("[data-tab]").forEach(b => b.onclick = () => { S.tab = b.dataset.tab; render(); });
+  ({list:renderList, settle:renderSettle, setup:renderSettings})[S.tab]();
+  fab((g.members||[]).length >= 2 && S.tab !== "setup");
+}
+
+function fab(show){
+  let b = $("#fab");
+  if (!show){ b && b.remove(); return; }
+  if (!b){ b = document.createElement("button"); b.id="fab"; b.className="btn-primary fab"; b.textContent="＋ 記一筆"; document.body.appendChild(b); }
+  b.onclick = () => openExpense();
+}
+
+function renderList(){
+  const t = $("#tabbody"), g = S.group;
+  if ((g.members||[]).length < 2){
+    t.innerHTML = `<div class="panel empty">先到「設定」加入至少兩位成員，就能開始記帳。<br><br><button class="btn-primary" id="go">新增成員</button></div>`;
+    $("#go").onclick = () => { S.tab="setup"; render(); }; return;
+  }
+  if (!S.expenses.length){ t.innerHTML = `<div class="panel empty">還沒有任何花費。按右下角「記一筆」新增第一筆，例如晚餐或車票。</div>`; return; }
+  t.innerHTML = `<div class="panel list">${S.expenses.map(e => {
+    const [, mo, d] = (e.date||"").split("-");
+    const foreign = e.currency !== g.base;
+    const dateCell = `<div class="date">${esc(+mo||"")}月<b>${esc(+d||"")}</b></div>`;
+    if (e.kind === "transfer") return `<div class="exp transfer">${dateCell}
+      <div><div class="t">${esc(mname(e.payer))} 轉帳給 ${esc(mname(e.to))}<span class="tag">還款</span></div></div>
+      <div class="amt num">${fmt(e.amount,e.currency)} <small>${esc(e.currency)}</small><button class="btn-ghost btn-sm" data-del="${esc(e.id)}">刪除</button></div></div>`;
+    const ps = e.mode==="exact" ? Object.keys(e.exact||{}) : (e.participants||[]);
+    const how = e.mode==="exact" ? `自訂金額給 ${ps.length} 人` : ps.length===1 ? `全算 ${esc(mname(ps[0]))}` : `${ps.length} 人平分`;
+    return `<div class="exp" data-edit="${esc(e.id)}" style="cursor:pointer">${dateCell}
+      <div style="min-width:0"><div class="t">${esc(e.title)}</div><div class="s">${esc(mname(e.payer))} 先付 · ${how}</div></div>
+      <div class="amt num">${fmt(e.amount,e.currency)} ${esc(e.currency)}${foreign?`<small>≈ ${fmt(baseAmt(e),g.base)} ${esc(g.base)}</small>`:""}</div></div>`;
+  }).join("")}</div>`;
+  t.querySelectorAll("[data-edit]").forEach(r => r.onclick = () => openExpense(S.expenses.find(e=>e.id===r.dataset.edit)));
+  t.querySelectorAll("[data-del]").forEach(b => b.onclick = ev => { ev.stopPropagation(); confirmDelete(b.dataset.del, "這筆還款紀錄"); });
+}
+
+function renderSettle(){
+  const t = $("#tabbody"), g = S.group, base = g.base;
+  const b = balances(), xs = simplify(b);
+  const max = Math.max(1, ...Object.values(b).map(Math.abs));
+  t.innerHTML = `<div class="stack">
+    <div class="panel"><h3>每人餘額（${esc(base)}）</h3>
+      ${(g.members||[]).map(m => { const v = b[m.id]||0, w = Math.abs(v)/max*50;
+        return `<div class="bal"><div>${esc(m.name)}</div>
+          <div class="bar"><span style="${v>=0?`left:50%;width:${w}%;background:var(--get)`:`right:50%;width:${w}%;background:var(--owe)`}"></span></div>
+          <div class="num ${v>0.004?"pos":v<-0.004?"neg":""}" style="text-align:right">${v>0.004?"+":""}${fmt(v,base)}</div></div>`; }).join("")}
+      <p class="note" style="margin:8px 0 0">正數代表該收回的錢，負數代表還要付出去的錢。</p>
+    </div>
+    <div class="panel stack"><h3>建議轉帳</h3>
+      ${xs.length ? xs.map((x,i)=>`<div class="xfer"><span class="who">${esc(mname(x.from))}</span><span class="arrow">→</span><span class="who">${esc(mname(x.to))}</span>
+        <span class="grow"></span><span class="num">${fmt(x.amt,base)} ${esc(base)}</span>
+        <button class="btn-sm" data-pay="${i}">標記已付</button></div>`).join("")
+        : `<div class="empty" style="padding:12px">大家都結清了。</div>`}
+    </div></div>`;
+  t.querySelectorAll("[data-pay]").forEach(btn => btn.onclick = () => {
+    const x = xs[+btn.dataset.pay];
+    saveExp({id:rid("t"), kind:"transfer", payer:x.from, to:x.to, amount:x.amt, currency:base, rate:1, date:today(), createdAt:Date.now()});
+  });
+}
+
+function renderSettings(){
+  const t = $("#tabbody"), g = S.group;
+  const used = new Set(); S.expenses.forEach(e => { used.add(e.payer); e.to && used.add(e.to); (e.participants||[]).forEach(i=>used.add(i)); Object.keys(e.exact||{}).forEach(i=>used.add(i)); });
+  const rates = g.rates || {};
+  const code = encodeCfg(cfg), link = location.origin + location.pathname + "#setup=" + encodeURIComponent(code);
+  t.innerHTML = `<div class="stack">
+    <div class="panel stack"><h3>成員</h3>
+      <div class="chips">${(g.members||[]).map(m=>`<span class="chip">${esc(m.name)}${used.has(m.id)?"":`<button aria-label="移除 ${esc(m.name)}" data-rm="${esc(m.id)}">×</button>`}</span>`).join("") || `<span class="note">還沒有成員。</span>`}</div>
+      <form id="addm" class="row"><label class="f" style="flex:3 1 180px">新增成員<input id="mname" maxlength="20" placeholder="例如：Jade"></label><button class="btn-primary" style="flex:0 0 auto">加入</button></form>
+      <p class="note" style="margin:0">已經出現在帳目裡的成員不能移除。</p>
+    </div>
+    <div class="panel stack"><h3>匯率</h3>
+      <p class="note" style="margin:0">主幣別是 <b>${esc(g.base)}</b>，結算都換算成主幣別。下面填 1 單位外幣等於多少 ${esc(g.base)}，記帳時會自動帶入，每筆也可以另外改。</p>
+      <div class="rates">${Object.entries(rates).map(([c,v])=>`<span class="num">1 ${esc(c)} =</span>
+        <input type="number" inputmode="decimal" step="any" min="0" value="${esc(v)}" data-rate="${esc(c)}" aria-label="${esc(c)} 匯率">
+        <button class="btn-ghost btn-sm" data-rmr="${esc(c)}">移除</button>`).join("")}</div>
+      <form id="addr" class="row"><label class="f">新增幣別<select id="rcur">${CURS.filter(c=>c!==g.base && !(c in rates)).map(c=>`<option>${c}</option>`).join("")}</select></label>
+        <label class="f">1 單位 = ? ${esc(g.base)}<input id="rval" type="number" inputmode="decimal" step="any" min="0" placeholder="例如 0.21"></label><button style="flex:0 0 auto">加入幣別</button></form>
+    </div>
+    <div class="panel stack"><h3>群組名稱</h3>
+      <div class="row"><label class="f" style="flex:3 1 180px">名稱<input id="gname" maxlength="40" value="${esc(g.name)}"></label><button id="saveg" style="flex:0 0 auto">儲存</button></div>
+    </div>
+    <div class="panel stack"><h3>邀請對方的手機</h3>
+      <p class="note" style="margin:0">把這個連結用 LINE 傳給對方，對方用手機打開就會自動連上。如果對方已經把 App 加到主畫面，請改傳下面的設定碼，在 App 裡貼上。設定碼裡有密碼，只傳給要一起記帳的人。</p>
+      <div class="code" id="invlink">${esc(link)}</div>
+      <div class="row"><button id="cplink" style="flex:0 0 auto">複製邀請連結</button><button id="cpcode" style="flex:0 0 auto">複製設定碼</button></div>
+      <div class="code" id="invcode" hidden>${esc(code)}</div>
+      <div class="note" id="cpmsg"></div>
+    </div>
+    <div class="panel stack"><h3>這支手機</h3>
+      <p class="note" style="margin:0">${queue.length ? `還有 ${queue.length} 筆沒上傳到試算表，連上網路後會自動上傳。` : "所有紀錄都已上傳到試算表。"}</p>
+      <div class="row"><button id="logout" class="btn-ghost" style="flex:0 0 auto;color:var(--owe)">中斷這支手機的連線</button></div>
+    </div></div>`;
+  const upd = patch => saveGroup({...g, ...patch});
+  $("#addm").onsubmit = e => { e.preventDefault(); const n = $("#mname").value.trim(); if (!n) return; upd({members:[...(g.members||[]), {id:rid("m"), name:n}]}); };
+  t.querySelectorAll("[data-rm]").forEach(b => b.onclick = () => upd({members:(g.members||[]).filter(m=>m.id!==b.dataset.rm)}));
+  t.querySelectorAll("[data-rate]").forEach(i => i.onchange = () => { const v = parseFloat(i.value); if (v>0) upd({rates:{...rates,[i.dataset.rate]:v}}); });
+  t.querySelectorAll("[data-rmr]").forEach(b => b.onclick = () => { const r = {...rates}; delete r[b.dataset.rmr]; upd({rates:r}); });
+  $("#addr").onsubmit = e => { e.preventDefault(); const c=$("#rcur").value, v=parseFloat($("#rval").value); if (c && v>0) upd({rates:{...rates,[c]:v}}); };
+  $("#saveg").onclick = () => { const n=$("#gname").value.trim(); if (n) upd({name:n}); };
+  const copy = async (text, el, msg) => {
+    try { await navigator.clipboard.writeText(text); $("#cpmsg").textContent = msg; }
+    catch(e){ el.hidden = false; const r = document.createRange(); r.selectNodeContents(el); const s = getSelection(); s.removeAllRanges(); s.addRange(r); $("#cpmsg").textContent = "請長按上面選取的文字來複製。"; }
+  };
+  $("#cplink").onclick = () => copy(link, $("#invlink"), "已複製邀請連結。");
+  $("#cpcode").onclick = () => copy(code, $("#invcode"), "已複製設定碼。");
+  $("#logout").onclick = () => {
+    modal(`<h2>中斷這支手機的連線？</h2><p class="note" style="margin:0">試算表裡的資料不會被刪除，之後貼上設定碼就能重新連上。${queue.length?`<br><b class="neg">注意：還有 ${queue.length} 筆沒上傳，中斷後會遺失。</b>`:""}</p>
+      <div class="row" style="justify-content:flex-end"><button class="btn-ghost" data-close style="flex:0 0 auto">取消</button><button class="btn-primary" id="lo" style="flex:0 0 auto;background:var(--owe);border-color:var(--owe)">中斷連線</button></div>`);
+    $("#lo").onclick = () => { ["fenfen.cfg","fenfen.cache","fenfen.queue","fenfen.gid"].forEach(LS.del); cfg=null; server={groups:[],expenses:[]}; queue=[]; S.gid=null; closeModal(); refresh(true); renderStatus(); };
+  };
+}
+
+/* ---------- new group ---------- */
+function newGroupForm(){
+  return `<form id="ngf" class="stack">
+    <div class="row"><label class="f" style="flex:3 1 200px">群組名稱<input id="ng-name" maxlength="40" placeholder="例如：日常生活"></label>
+    <label class="f">主幣別<select id="ng-base">${CURS.map(c=>`<option>${c}</option>`).join("")}</select></label></div>
+    <label class="f">成員（用逗號或空白分開）<input id="ng-mem" value="Derek, Jade"></label>
+    <div class="err" id="ng-err"></div>
+    <div class="row"><button class="btn-primary" style="flex:0 0 auto">建立群組</button></div></form>`;
+}
+function bindNewGroup(after){
+  const f = $("#ngf"); if (!f) return;
+  f.onsubmit = e => { e.preventDefault();
+    const name = $("#ng-name").value.trim(); if (!name){ $("#ng-err").textContent = "請填寫群組名稱。"; return; }
+    const members = $("#ng-mem").value.split(/[,，、\s]+/).map(s=>s.trim()).filter(Boolean).slice(0,40).map(n=>({id:rid("m"),name:n}));
+    const id = rid("g");
+    after && after();
+    S.tab = members.length>=2 ? "list" : "setup";
+    S.gid = id; LS.set("fenfen.gid", id);
+    saveGroup({id, name, base:$("#ng-base").value, members, rates:{}, createdAt:Date.now()});
+  };
+}
+function openNewGroup(){
+  modal(`<h2>新群組</h2>${newGroupForm()}<div class="row"><button class="btn-ghost" data-close style="flex:0 0 auto">取消</button></div>`);
+  bindNewGroup(closeModal);
+}
+
+/* ---------- modal ---------- */
+function modal(html){
+  $("#modal").innerHTML = `<div class="overlay"><div class="sheet" role="dialog" aria-modal="true">${html}</div></div>`;
+  $("#modal .overlay").onclick = e => { if (e.target.classList.contains("overlay")) closeModal(); };
+  $("#modal").querySelectorAll("[data-close]").forEach(b=>b.onclick=closeModal);
+}
+function closeModal(){ $("#modal").innerHTML = ""; }
+document.addEventListener("keydown", e => { if (e.key==="Escape") closeModal(); });
+
+function confirmDelete(id, what){
+  modal(`<h2>刪除${esc(what)}？</h2><p class="note" style="margin:0">刪除後兩支手機的帳本都會更新，無法復原。</p>
+    <div class="row" style="justify-content:flex-end"><button class="btn-ghost" data-close style="flex:0 0 auto">取消</button><button class="btn-primary" id="cdel" style="flex:0 0 auto;background:var(--owe);border-color:var(--owe)">刪除</button></div>`);
+  $("#cdel").onclick = () => { delExp(id); closeModal(); };
+}
+
+/* ---------- expense editor ---------- */
+function openExpense(e){
+  const g = S.group, ms = g.members||[], rates = g.rates||{};
+  const st = e ? JSON.parse(JSON.stringify(e)) : { title:"", amount:"", currency:g.base, rate:1, payer:ms[0]?.id, mode:"equal", participants:ms.map(m=>m.id), exact:{}, date:today() };
+  st.exact = st.exact || {};
+  if (st.mode==="exact" && !st.participants) st.participants = Object.keys(st.exact);
+  const curs = [g.base, ...Object.keys(rates)]; if (!curs.includes(st.currency)) curs.push(st.currency);
+  modal(`<h2>${e?"編輯花費":"記一筆"}</h2>
+    <form id="ef" class="stack" novalidate>
+      <label class="f">品項<input id="e-title" maxlength="60" placeholder="例如：晚餐、計程車" value="${esc(st.title)}"></label>
+      <div class="row"><label class="f">金額<input id="e-amt" type="number" inputmode="decimal" step="any" min="0" value="${esc(st.amount)}"></label>
+        <label class="f" style="flex:0 1 110px">幣別<select id="e-cur">${curs.map(c=>`<option${c===st.currency?" selected":""}>${esc(c)}</option>`).join("")}</select></label></div>
+      <div class="row" id="e-rate-row"><label class="f">匯率：1 <span id="e-rc"></span> = ? ${esc(g.base)}<input id="e-rate" type="number" inputmode="decimal" step="any" min="0" value="${esc(st.rate)}"></label><div class="note" id="e-conv" style="align-self:center"></div></div>
+      <div class="row"><label class="f">誰先付的<select id="e-payer">${ms.map(m=>`<option value="${esc(m.id)}"${m.id===st.payer?" selected":""}>${esc(m.name)}</option>`).join("")}</select></label>
+        <label class="f">日期<input id="e-date" type="date" value="${esc(st.date)}"></label></div>
+      <div class="stack" style="gap:8px"><div class="row" style="align-items:center"><span class="note" style="flex:0 0 auto">分攤方式</span>
+        <div class="seg" style="flex:0 0 auto"><button type="button" data-mode="equal">點選平分</button><button type="button" data-mode="exact">自訂金額</button></div>
+        <button type="button" class="btn-ghost btn-sm" id="e-all" style="flex:0 0 auto">全選</button></div>
+        <div id="e-parts" class="stack" style="gap:6px"></div><div class="note" id="e-sum"></div></div>
+      <div class="err" id="e-err"></div>
+      <div class="row" style="justify-content:space-between">
+        ${e?`<button type="button" class="btn-ghost" id="e-del" style="flex:0 0 auto;color:var(--owe)">刪除</button>`:"<span></span>"}
+        <span style="display:flex;gap:8px;flex:0 0 auto"><button type="button" class="btn-ghost" data-close>取消</button><button class="btn-primary">儲存</button></span></div>
+    </form>`);
+
+  const exactSum = () => {
+    const cur = $("#e-cur").value, amt = parseFloat($("#e-amt").value)||0;
+    const sum = st.participants.reduce((s,id)=>s+(parseFloat(st.exact[id])||0),0), left = r2(amt-sum);
+    $("#e-sum").innerHTML = `已分配 <span class="num">${fmt(sum,cur)}</span> / <span class="num">${fmt(amt,cur)}</span> ${esc(cur)}${Math.abs(left)>0.004?` · <span class="neg">還差 ${fmt(left,cur)}</span>`:""}`;
+  };
+  const sync = () => {
+    const cur = $("#e-cur").value; $("#e-rc").textContent = cur;
+    $("#e-rate-row").hidden = cur === g.base;
+    const amt = parseFloat($("#e-amt").value)||0, rate = cur===g.base?1:parseFloat($("#e-rate").value)||0;
+    $("#e-conv").textContent = cur===g.base ? "" : `≈ ${fmt(amt*rate,g.base)} ${g.base}`;
+    document.querySelectorAll("[data-mode]").forEach(b=>b.setAttribute("aria-pressed", b.dataset.mode===st.mode));
+    const ps = new Set(st.participants), each = ps.size ? amt/ps.size : 0;
+    $("#e-parts").innerHTML = st.mode==="exact"
+      ? ms.map(m=>`<label class="part"><input type="checkbox" data-p="${esc(m.id)}"${ps.has(m.id)?" checked":""}><span>${esc(m.name)}</span>
+          <input type="number" inputmode="decimal" step="any" min="0" data-x="${esc(m.id)}" value="${esc(st.exact[m.id]??"")}" ${ps.has(m.id)?"":"disabled"} aria-label="${esc(m.name)} 的金額"></label>`).join("")
+      : `<div class="pick">${ms.map(m=>`<button type="button" class="pk" data-pk="${esc(m.id)}" aria-pressed="${ps.has(m.id)}">
+          <span class="ck" aria-hidden="true">${ps.has(m.id)?"✓":""}</span><span class="nm">${esc(m.name)}</span>
+          <span class="num sh">${ps.has(m.id)?fmt(each,cur):"不分攤"}</span></button>`).join("")}</div>`;
+    if (st.mode==="exact") exactSum();
+    else $("#e-sum").textContent = !ps.size ? "點選要分攤這筆的人"
+      : ps.size===1 ? `全部算 ${mname([...ps][0])} 的，共 ${fmt(amt,cur)} ${cur}`
+      : `${ps.size} 人平分，每人 ${fmt(each,cur)} ${cur}`;
+    $("#e-parts").querySelectorAll("[data-pk]").forEach(b=>b.onclick=()=>{ const id=b.dataset.pk; st.participants = st.participants.includes(id) ? st.participants.filter(x=>x!==id) : [...st.participants,id]; sync(); });
+    $("#e-parts").querySelectorAll("[data-p]").forEach(c=>c.onchange=()=>{ const id=c.dataset.p; st.participants = c.checked ? [...st.participants,id] : st.participants.filter(x=>x!==id); sync(); });
+    $("#e-parts").querySelectorAll("[data-x]").forEach(i=>i.oninput=()=>{ st.exact[i.dataset.x]=i.value; exactSum(); });
+  };
+  $("#e-cur").onchange = () => { const c = $("#e-cur").value; if (c!==g.base && rates[c]) $("#e-rate").value = rates[c]; sync(); };
+  $("#e-amt").oninput = sync; $("#e-rate").oninput = sync;
+  document.querySelectorAll("[data-mode]").forEach(b=>b.onclick=()=>{ st.mode=b.dataset.mode; sync(); });
+  $("#e-all").onclick = () => { st.participants = ms.map(m=>m.id); sync(); };
+  if (e) $("#e-del").onclick = () => confirmDelete(e.id, "「"+e.title+"」");
+  sync();
+
+  $("#ef").onsubmit = ev => { ev.preventDefault();
+    const err = m => { $("#e-err").textContent = m; };
+    const title = $("#e-title").value.trim(), amount = r2(parseFloat($("#e-amt").value)), cur = $("#e-cur").value;
+    const rate = cur===g.base ? 1 : parseFloat($("#e-rate").value);
+    if (!title) return err("請填寫品項。");
+    if (!(amount>0)) return err("請填寫大於 0 的金額。");
+    if (!(rate>0)) return err(`請填寫 ${cur} 對 ${g.base} 的匯率。`);
+    if (!st.participants.length) return err("至少要選一位分攤的人。");
+    const doc = { id:e?.id || rid("e"), kind:"expense", title, amount, currency:cur, rate, payer:$("#e-payer").value, date:$("#e-date").value||today(), mode:st.mode, participants:st.participants, createdAt:e?.createdAt||Date.now() };
+    if (st.mode==="exact"){
+      const ex = {}; let sum = 0; for (const id of st.participants){ const v = r2(parseFloat(st.exact[id])||0); ex[id]=v; sum+=v; }
+      if (Math.abs(sum-amount)>0.01) return err(`自訂金額加總 ${fmt(sum,cur)}，跟總金額 ${fmt(amount,cur)} 不一樣。`);
+      doc.exact = ex;
+    }
+    saveExp(doc); closeModal();
+    if (S.tab!=="list"){ S.tab="list"; render(); }
+  };
+}
+
+/* ---------- start ---------- */
+if ("serviceWorker" in navigator) addEventListener("load", () => navigator.serviceWorker.register("sw.js").catch(()=>{}));
+refresh(true); renderStatus();
+if (cfg) sync();
+</script>
+</body>
+</html>
