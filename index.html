@@ -120,6 +120,8 @@ h3{font-size:14px;margin:4px 0;color:var(--muted);font-weight:500;letter-spacing
 
 [hidden]{display:none!important}
 img{max-width:100%}
+.seg{max-width:100%}
+.seg button{white-space:nowrap}
 
 html{-webkit-text-size-adjust:100%}
 body{margin:0;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);-webkit-tap-highlight-color:transparent}
@@ -142,7 +144,7 @@ textarea{font:inherit;color:inherit;background:var(--surface);border:1px solid v
 <div id="modal"></div>
 
 <script>
-const CURS = ["TWD","JPY","USD","EUR","KRW","HKD","CNY","THB","GBP","SGD","AUD","VND","MYR"];
+const CURS = ["TWD","JPY","USD","EUR","KRW","HKD","CNY","MOP","THB","SGD","MYR","VND","PHP","IDR","GBP","CHF","AUD","NZD","CAD"];
 const NODEC = new Set(["TWD","JPY","KRW","VND"]);
 const POLL_MS = 15000;
 
@@ -164,7 +166,7 @@ const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt
 const rid = p => p + Date.now().toString(36) + Math.random().toString(36).slice(2,7);
 const today = () => { const d = new Date(); return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"); };
 const r2 = n => Math.round(n*100)/100;
-function fmt(n, cur){ const d = NODEC.has(cur)?0:2; return Number(n).toLocaleString("zh-TW",{minimumFractionDigits:d,maximumFractionDigits:d}); }
+function fmt(n, cur){ const d = NODEC.has(cur)?0:2; let v = Math.round(Number(n)*10**d)/10**d; if (v === 0) v = 0; return v.toLocaleString("zh-TW",{minimumFractionDigits:d,maximumFractionDigits:d}); }
 const mname = id => (S.group?.members||[]).find(m=>m.id===id)?.name || "（已移除）";
 
 /* ---------- setup code (shared with the other phone) ---------- */
@@ -272,6 +274,39 @@ function renderStatus(){
   b.onclick = () => sync();
 }
 
+/* ---------- exchange rates ---------- */
+// Reference rates from the free fawazahmed0 currency API. Returns {date, rates:{CUR: how many base units 1 CUR is worth}}.
+async function fx(base){
+  const k = "fenfen.fx." + base, cached = LS.get(k, null);
+  if (cached && Date.now() - cached.at < 6*3600e3) return cached;
+  const b = base.toLowerCase();
+  for (const u of [`https://latest.currency-api.pages.dev/v1/currencies/${b}.json`,
+                   `https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@latest/v1/currencies/${b}.json`]){
+    try {
+      const r = await fetch(u, {cache:"no-store"}); if (!r.ok) continue;
+      const j = await r.json(), m = j && j[b]; if (!m) continue;
+      const rates = {};
+      for (const c of CURS){ const v = Number(m[c.toLowerCase()]); if (v > 0) rates[c] = +(1/v).toPrecision(6); }
+      const out = {at:Date.now(), date:j.date, rates}; LS.set(k, out); return out;
+    } catch(e){}
+  }
+  return cached;   // stale copy, or null when never fetched
+}
+
+/* ---------- display currency (結算幣別) ---------- */
+function dispCur(){
+  const g = S.group, d = (LS.get("fenfen.disp", {}))[g.id];
+  return d && (d === g.base || (g.rates||{})[d] > 0) ? d : g.base;
+}
+function setDisp(c){ const all = LS.get("fenfen.disp", {}); all[S.group.id] = c; LS.set("fenfen.disp", all); render(); }
+const toDisp = (x, d) => d === S.group.base ? x : x / S.group.rates[d];
+function dispSwitch(){
+  const g = S.group, cs = [g.base, ...Object.keys(g.rates||{})], d = dispCur();
+  if (cs.length < 2) return "";
+  return `<div class="row" style="align-items:center;gap:8px"><span class="note" style="flex:0 0 auto">金額顯示為</span>
+    <div class="seg" style="flex:0 1 auto;overflow-x:auto">${cs.map(c=>`<button type="button" data-disp="${esc(c)}" aria-pressed="${c===d}">${esc(c)}</button>`).join("")}</div></div>`;
+}
+
 /* ---------- core math ---------- */
 const rateOf = e => e.currency === S.group.base ? 1 : Number(e.rate)||0;
 const baseAmt = e => e.amount * rateOf(e);
@@ -373,18 +408,20 @@ function render(){
   }
   const g = S.group, base = g.base;
   const spend = S.expenses.filter(e=>e.kind!=="transfer").reduce((s,e)=>s+baseAmt(e),0);
-  const open = simplify(balances());
+  const open = simplify(balances()), d = dispCur();
   m.innerHTML = `
     <h1 class="gtitle">${esc(g.name)}</h1>
+    ${dispSwitch()}
     <div class="summary">
-      <div><span class="k">總支出</span><span class="v num">${fmt(spend,base)} <small>${esc(base)}</small></span></div>
-      <div><span class="k">待轉帳</span><span class="v">${open.length ? `<span class="num">${fmt(open[0].amt,base)}</span> <small>${esc(mname(open[0].from))} → ${esc(mname(open[0].to))}</small>${open.length>1?` <small>等 ${open.length} 筆</small>`:""}` : "已結清"}</span></div>
+      <div><span class="k">總支出</span><span class="v num">${fmt(toDisp(spend,d),d)} <small>${esc(d)}</small></span></div>
+      <div><span class="k">待轉帳</span><span class="v">${open.length ? `<span class="num">${fmt(toDisp(open[0].amt,d),d)}</span> <small>${esc(d)}</small> <small>${esc(mname(open[0].from))} → ${esc(mname(open[0].to))}</small>${open.length>1?` <small>等 ${open.length} 筆</small>`:""}` : "已結清"}</span></div>
     </div>
     <div class="tabs" role="tablist">
       ${[["list","帳目"],["settle","結算"],["setup","設定"]].map(([k,l])=>`<button role="tab" data-tab="${k}" aria-selected="${S.tab===k}">${l}</button>`).join("")}
     </div>
     <section id="tabbody"></section>`;
   m.querySelectorAll("[data-tab]").forEach(b => b.onclick = () => { S.tab = b.dataset.tab; render(); });
+  m.querySelectorAll("[data-disp]").forEach(b => b.onclick = () => setDisp(b.dataset.disp));
   ({list:renderList, settle:renderSettle, setup:renderSettings})[S.tab]();
   fab((g.members||[]).length >= 2 && S.tab !== "setup");
 }
@@ -421,26 +458,26 @@ function renderList(){
 }
 
 function renderSettle(){
-  const t = $("#tabbody"), g = S.group, base = g.base;
+  const t = $("#tabbody"), g = S.group, base = g.base, d = dispCur();
   const b = balances(), xs = simplify(b);
   const max = Math.max(1, ...Object.values(b).map(Math.abs));
   t.innerHTML = `<div class="stack">
-    <div class="panel"><h3>每人餘額（${esc(base)}）</h3>
+    <div class="panel"><h3>每人餘額（${esc(d)}）</h3>
       ${(g.members||[]).map(m => { const v = b[m.id]||0, w = Math.abs(v)/max*50;
         return `<div class="bal"><div>${esc(m.name)}</div>
           <div class="bar"><span style="${v>=0?`left:50%;width:${w}%;background:var(--get)`:`right:50%;width:${w}%;background:var(--owe)`}"></span></div>
-          <div class="num ${v>0.004?"pos":v<-0.004?"neg":""}" style="text-align:right">${v>0.004?"+":""}${fmt(v,base)}</div></div>`; }).join("")}
-      <p class="note" style="margin:8px 0 0">正數代表該收回的錢，負數代表還要付出去的錢。</p>
+          <div class="num ${v>0.004?"pos":v<-0.004?"neg":""}" style="text-align:right">${v>0.004?"+":""}${fmt(toDisp(v,d),d)}</div></div>`; }).join("")}
+      <p class="note" style="margin:8px 0 0">正數代表該收回的錢，負數代表還要付出去的錢。${d!==base?`以 1 ${esc(d)} = ${esc(g.rates[d])} ${esc(base)} 換算，匯率可在「設定」修改。`:""}</p>
     </div>
     <div class="panel stack"><h3>建議轉帳</h3>
       ${xs.length ? xs.map((x,i)=>`<div class="xfer"><span class="who">${esc(mname(x.from))}</span><span class="arrow">→</span><span class="who">${esc(mname(x.to))}</span>
-        <span class="grow"></span><span class="num">${fmt(x.amt,base)} ${esc(base)}</span>
+        <span class="grow"></span><span class="num">${fmt(toDisp(x.amt,d),d)} ${esc(d)}</span>
         <button class="btn-sm" data-pay="${i}">標記已付</button></div>`).join("")
         : `<div class="empty" style="padding:12px">大家都結清了。</div>`}
     </div></div>`;
   t.querySelectorAll("[data-pay]").forEach(btn => btn.onclick = () => {
     const x = xs[+btn.dataset.pay];
-    saveExp({id:rid("t"), kind:"transfer", payer:x.from, to:x.to, amount:x.amt, currency:base, rate:1, date:today(), createdAt:Date.now()});
+    saveExp({id:rid("t"), kind:"transfer", payer:x.from, to:x.to, amount:r2(toDisp(x.amt,d)), currency:d, rate:d===base?1:g.rates[d], date:today(), createdAt:Date.now()});
   });
 }
 
@@ -456,12 +493,13 @@ function renderSettings(){
       <p class="note" style="margin:0">已經出現在帳目裡的成員不能移除。</p>
     </div>
     <div class="panel stack"><h3>匯率</h3>
-      <p class="note" style="margin:0">主幣別是 <b>${esc(g.base)}</b>，結算都換算成主幣別。下面填 1 單位外幣等於多少 ${esc(g.base)}，記帳時會自動帶入，每筆也可以另外改。</p>
+      <p class="note" style="margin:0">主幣別是 <b>${esc(g.base)}</b>。記帳時選外幣會自動帶入匯率並換算成 ${esc(g.base)}；結算頁可以切換用哪個幣別顯示。改這裡的匯率不會影響已經記好的帳，每筆帳都保留記帳當下的匯率。</p>
       <div class="rates">${Object.entries(rates).map(([c,v])=>`<span class="num">1 ${esc(c)} =</span>
         <input type="number" inputmode="decimal" step="any" min="0" value="${esc(v)}" data-rate="${esc(c)}" aria-label="${esc(c)} 匯率">
         <button class="btn-ghost btn-sm" data-rmr="${esc(c)}">移除</button>`).join("")}</div>
       <form id="addr" class="row"><label class="f">新增幣別<select id="rcur">${CURS.filter(c=>c!==g.base && !(c in rates)).map(c=>`<option>${c}</option>`).join("")}</select></label>
         <label class="f">1 單位 = ? ${esc(g.base)}<input id="rval" type="number" inputmode="decimal" step="any" min="0" placeholder="例如 0.21"></label><button style="flex:0 0 auto">加入幣別</button></form>
+      ${Object.keys(rates).length?`<div class="row" style="align-items:center"><button type="button" id="fxall" style="flex:0 0 auto">全部更新成最新參考匯率</button><span class="note" id="fxmsg"></span></div>`:""}
     </div>
     <div class="panel stack"><h3>群組名稱</h3>
       <div class="row"><label class="f" style="flex:3 1 180px">名稱<input id="gname" maxlength="40" value="${esc(g.name)}"></label><button id="saveg" style="flex:0 0 auto">儲存</button></div>
@@ -482,6 +520,16 @@ function renderSettings(){
   t.querySelectorAll("[data-rm]").forEach(b => b.onclick = () => upd({members:(g.members||[]).filter(m=>m.id!==b.dataset.rm)}));
   t.querySelectorAll("[data-rate]").forEach(i => i.onchange = () => { const v = parseFloat(i.value); if (v>0) upd({rates:{...rates,[i.dataset.rate]:v}}); });
   t.querySelectorAll("[data-rmr]").forEach(b => b.onclick = () => { const r = {...rates}; delete r[b.dataset.rmr]; upd({rates:r}); });
+  const fillNew = async () => { const c = $("#rcur").value; if (!c) return; const r = await fx(g.base); if (r && r.rates[c] && $("#rcur").value === c && !$("#rval").value) $("#rval").value = r.rates[c]; };
+  $("#rcur") && ($("#rcur").onchange = () => { $("#rval").value = ""; fillNew(); });
+  $("#rcur") && fillNew();
+  $("#fxall") && ($("#fxall").onclick = async () => {
+    $("#fxmsg").textContent = "取得中…";
+    const r = await fx(g.base);
+    if (!r){ $("#fxmsg").textContent = "抓不到參考匯率，請稍後再試。"; return; }
+    const next = {...rates}; for (const c of Object.keys(next)) if (r.rates[c]) next[c] = r.rates[c];
+    upd({rates:next});
+  });
   $("#addr").onsubmit = e => { e.preventDefault(); const c=$("#rcur").value, v=parseFloat($("#rval").value); if (c && v>0) upd({rates:{...rates,[c]:v}}); };
   $("#saveg").onclick = () => { const n=$("#gname").value.trim(); if (n) upd({name:n}); };
   const copy = async (text, el, msg) => {
@@ -544,13 +592,15 @@ function openExpense(e){
   const st = e ? JSON.parse(JSON.stringify(e)) : { title:"", amount:"", currency:g.base, rate:1, payer:ms[0]?.id, mode:"equal", participants:ms.map(m=>m.id), exact:{}, date:today() };
   st.exact = st.exact || {};
   if (st.mode==="exact" && !st.participants) st.participants = Object.keys(st.exact);
-  const curs = [g.base, ...Object.keys(rates)]; if (!curs.includes(st.currency)) curs.push(st.currency);
+  const mine = [g.base, ...Object.keys(rates)]; if (!mine.includes(st.currency)) mine.push(st.currency);
+  const others = CURS.filter(c => !mine.includes(c));
   modal(`<h2>${e?"編輯花費":"記一筆"}</h2>
     <form id="ef" class="stack" novalidate>
       <label class="f">品項<input id="e-title" maxlength="60" placeholder="例如：晚餐、計程車" value="${esc(st.title)}"></label>
       <div class="row"><label class="f">金額<input id="e-amt" type="number" inputmode="decimal" step="any" min="0" value="${esc(st.amount)}"></label>
-        <label class="f" style="flex:0 1 110px">幣別<select id="e-cur">${curs.map(c=>`<option${c===st.currency?" selected":""}>${esc(c)}</option>`).join("")}</select></label></div>
-      <div class="row" id="e-rate-row"><label class="f">匯率：1 <span id="e-rc"></span> = ? ${esc(g.base)}<input id="e-rate" type="number" inputmode="decimal" step="any" min="0" value="${esc(st.rate)}"></label><div class="note" id="e-conv" style="align-self:center"></div></div>
+        <label class="f" style="flex:0 1 110px">幣別<select id="e-cur"><optgroup label="這個群組用過">${mine.map(c=>`<option${c===st.currency?" selected":""}>${esc(c)}</option>`).join("")}</optgroup><optgroup label="其他幣別">${others.map(c=>`<option>${esc(c)}</option>`).join("")}</optgroup></select></label></div>
+      <div class="row" id="e-rate-row"><label class="f"><span>匯率：1 <span id="e-rc"></span> 等於多少 ${esc(g.base)}</span><input id="e-rate" type="number" inputmode="decimal" step="any" min="0" value="${esc(st.rate)}"></label><div class="note" id="e-conv" style="align-self:center"></div></div>
+      <div class="note" id="e-fx" style="margin-top:-8px"></div>
       <div class="row"><label class="f">誰先付的<select id="e-payer">${ms.map(m=>`<option value="${esc(m.id)}"${m.id===st.payer?" selected":""}>${esc(m.name)}</option>`).join("")}</select></label>
         <label class="f">日期<input id="e-date" type="date" value="${esc(st.date)}"></label></div>
       <div class="stack" style="gap:8px"><div class="row" style="align-items:center"><span class="note" style="flex:0 0 auto">分攤方式</span>
@@ -589,7 +639,17 @@ function openExpense(e){
     $("#e-parts").querySelectorAll("[data-p]").forEach(c=>c.onchange=()=>{ const id=c.dataset.p; st.participants = c.checked ? [...st.participants,id] : st.participants.filter(x=>x!==id); sync(); });
     $("#e-parts").querySelectorAll("[data-x]").forEach(i=>i.oninput=()=>{ st.exact[i.dataset.x]=i.value; exactSum(); });
   };
-  $("#e-cur").onchange = () => { const c = $("#e-cur").value; if (c!==g.base && rates[c]) $("#e-rate").value = rates[c]; sync(); };
+  $("#e-cur").onchange = async () => {
+    const c = $("#e-cur").value, note = $("#e-fx"); note.textContent = "";
+    if (c === g.base){ sync(); return; }
+    if (rates[c]){ $("#e-rate").value = rates[c]; note.textContent = "使用這個群組設定的匯率。"; sync(); return; }
+    $("#e-rate").value = ""; note.textContent = "正在取得參考匯率…"; sync();
+    const r = await fx(g.base);
+    if ($("#e-cur")?.value !== c) return;   // changed again while loading
+    if (r && r.rates[c]){ $("#e-rate").value = r.rates[c]; note.textContent = `參考匯率（${r.date}），可以自己修改。存檔後這個群組之後都會用這個匯率。`; }
+    else note.textContent = "抓不到參考匯率，請自己輸入。";
+    sync();
+  };
   $("#e-amt").oninput = sync; $("#e-rate").oninput = sync;
   document.querySelectorAll("[data-mode]").forEach(b=>b.onclick=()=>{ st.mode=b.dataset.mode; sync(); });
   $("#e-all").onclick = () => { st.participants = ms.map(m=>m.id); sync(); };
@@ -610,6 +670,7 @@ function openExpense(e){
       if (Math.abs(sum-amount)>0.01) return err(`自訂金額加總 ${fmt(sum,cur)}，跟總金額 ${fmt(amount,cur)} 不一樣。`);
       doc.exact = ex;
     }
+    if (cur !== g.base && !(rates[cur] > 0)) saveGroup({...g, rates:{...rates, [cur]:rate}});
     saveExp(doc); closeModal();
     if (S.tab!=="list"){ S.tab="list"; render(); }
   };
