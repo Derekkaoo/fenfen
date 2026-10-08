@@ -206,6 +206,7 @@ async function api(method, body){
 }
 function syncFail(e){
   S.online = false;
+  S.lastErr = e && e.server ? e.message : null;   // server-side error text, shown instead of a bare "離線"
   if (e && e.server && (e.message==="pin" || e.message==="setup")) S.pinBad = e.message;
 }
 async function flush(){
@@ -216,7 +217,7 @@ async function flush(){
     await api("POST", {ops:batch});
     server = applyOps(server, batch); LS.set("fenfen.cache", server);
     queue = queue.slice(batch.length); LS.set("fenfen.queue", queue);
-    S.online = true; S.pinBad = false;
+    S.online = true; S.pinBad = false; S.lastErr = null;
   } catch(e){ syncFail(e); }
   S.flushing = false; renderStatus();
   if (S.online && queue.length) flush();
@@ -228,7 +229,7 @@ async function pull(){
     const data = await api("GET");
     const next = {groups:data.groups||[], expenses:data.expenses||[]};
     if (JSON.stringify(next) !== JSON.stringify(server)){ server = next; LS.set("fenfen.cache", server); refresh(); }
-    S.online = true; S.pinBad = false; S.firstLoad = true;
+    S.online = true; S.pinBad = false; S.lastErr = null; S.firstLoad = true;
   } catch(e){ syncFail(e); }
   S.pulling = false; renderStatus();
   if (S.online && queue.length) flush();
@@ -260,11 +261,14 @@ function renderStatus(){
   let t, off = false;
   if (S.pinBad === "setup"){ t = "試算表的密碼還沒設定"; off = true; }
   else if (S.pinBad){ t = "密碼錯誤"; off = true; }
+  else if (!S.online && S.lastErr){ t = queue.length ? `試算表錯誤 · ${queue.length} 筆待上傳` : "試算表錯誤"; off = true; }
   else if (!S.online){ t = queue.length ? `離線 · ${queue.length} 筆待上傳` : "離線"; off = true; }
   else if (queue.length || S.flushing){ t = "上傳中…"; }
   else if (S.pulling && !S.firstLoad){ t = "同步中…"; }
   else t = "已同步";
   b.textContent = t; b.classList.toggle("off", off);
+  $("#banner").innerHTML = !S.online && S.lastErr && !S.pinBad
+    ? `<div class="banner">試算表回報錯誤：${esc(S.lastErr)}。點右上角重試；一直出現的話，把這段文字截圖下來。</div>` : "";
   b.onclick = () => sync();
 }
 
@@ -335,7 +339,7 @@ function renderSetup0(){
     const prev = cfg; cfg = c;
     try { const data = await api("GET");
       LS.set("fenfen.cfg", c); server = {groups:data.groups||[], expenses:data.expenses||[]}; LS.set("fenfen.cache", server);
-      S.online = true; S.pinBad = false; S.firstLoad = true; refresh(true); renderStatus();
+      S.online = true; S.pinBad = false; S.lastErr = null; S.firstLoad = true; refresh(true); renderStatus();
     } catch(e){ cfg = prev;
       err.textContent = e.server && e.message==="pin" ? "密碼不對，請確認和 Code.gs 裡的 PIN 一樣。"
         : e.server && e.message==="setup" ? "Code.gs 裡的 PIN 還沒改，請先改好再重新部署。"
@@ -507,11 +511,11 @@ function bindNewGroup(after){
   f.onsubmit = e => { e.preventDefault();
     const name = $("#ng-name").value.trim(); if (!name){ $("#ng-err").textContent = "請填寫群組名稱。"; return; }
     const members = $("#ng-mem").value.split(/[,，、\s]+/).map(s=>s.trim()).filter(Boolean).slice(0,40).map(n=>({id:rid("m"),name:n}));
-    const id = rid("g");
+    const id = rid("g"), base = $("#ng-base").value;   // read every field before the dialog closes
     after && after();
     S.tab = members.length>=2 ? "list" : "setup";
     S.gid = id; LS.set("fenfen.gid", id);
-    saveGroup({id, name, base:$("#ng-base").value, members, rates:{}, createdAt:Date.now()});
+    saveGroup({id, name, base, members, rates:{}, createdAt:Date.now()});
   };
 }
 function openNewGroup(){

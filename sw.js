@@ -1,5 +1,5 @@
 // 分分帳 service worker：讓 App 在沒網路時也能打開（資料會在連網後同步）
-const CACHE = "fenfen-v1";
+const CACHE = "fenfen-v2";
 const SHELL = ["./", "index.html", "manifest.webmanifest", "icon-192.png", "icon-512.png", "apple-touch-icon.png"];
 self.addEventListener("install", e => { e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL))); self.skipWaiting(); });
 self.addEventListener("activate", e => {
